@@ -61,17 +61,12 @@ public final class Daemons {
      */
     private static abstract class Daemon implements Runnable {
         private Thread thread;
-        private String name;
-
-        protected Daemon(String name) {
-            this.name = name;
-        }
 
         public synchronized void start() {
             if (thread != null) {
                 throw new IllegalStateException("already running");
             }
-            thread = new Thread(ThreadGroup.systemThreadGroup, this, name);
+            thread = new Thread(ThreadGroup.systemThreadGroup, this, getClass().getSimpleName());
             thread.setDaemon(true);
             thread.start();
         }
@@ -87,10 +82,6 @@ public final class Daemons {
         }
 
         public synchronized void interrupt() {
-            interrupt(thread);
-        }
-
-        public synchronized void interrupt(Thread thread) {
             if (thread == null) {
                 throw new IllegalStateException("not running");
             }
@@ -110,7 +101,7 @@ public final class Daemons {
             if (threadToStop == null) {
                 throw new IllegalStateException("not running");
             }
-            interrupt(threadToStop);
+            threadToStop.interrupt();
             while (true) {
                 try {
                     threadToStop.join();
@@ -135,10 +126,6 @@ public final class Daemons {
      */
     private static class ReferenceQueueDaemon extends Daemon {
         private static final ReferenceQueueDaemon INSTANCE = new ReferenceQueueDaemon();
-
-        ReferenceQueueDaemon() {
-            super("ReferenceQueueDaemon");
-        }
 
         @Override public void run() {
             while (isRunning()) {
@@ -175,10 +162,6 @@ public final class Daemons {
         private final ReferenceQueue<Object> queue = FinalizerReference.queue;
         private volatile Object finalizingObject;
         private volatile long finalizingStartedNanos;
-
-        FinalizerDaemon() {
-            super("FinalizerDaemon");
-        }
 
         @Override public void run() {
             while (isRunning()) {
@@ -219,10 +202,6 @@ public final class Daemons {
      */
     private static class FinalizerWatchdogDaemon extends Daemon {
         private static final FinalizerWatchdogDaemon INSTANCE = new FinalizerWatchdogDaemon();
-
-        FinalizerWatchdogDaemon() {
-            super("FinalizerWatchdogDaemon");
-        }
 
         @Override public void run() {
             while (isRunning()) {
@@ -329,10 +308,6 @@ public final class Daemons {
     private static class HeapTrimmerDaemon extends Daemon {
         private static final HeapTrimmerDaemon INSTANCE = new HeapTrimmerDaemon();
 
-        HeapTrimmerDaemon() {
-            super("HeapTrimmerDaemon");
-        }
-
         @Override public void run() {
             while (isRunning()) {
                 try {
@@ -346,24 +321,34 @@ public final class Daemons {
         }
     }
 
+    // Invoked by the GC to request that the HeapTrimmerDaemon thread attempt to trim the heap.
+    public static void requestGC() {
+        GCDaemon.INSTANCE.requestGC();
+    }
+
     private static class GCDaemon extends Daemon {
         private static final GCDaemon INSTANCE = new GCDaemon();
+        private static final AtomicBoolean atomicBoolean = new AtomicBoolean();
 
-        GCDaemon() {
-            super("HeapTaskDaemon");
-        }
-
-        // Overrides the Daemon.interupt method which is called from Daemons.stop.
-        public void interrupt(Thread thread) {
-            // Notifies the daemon thread.
-            VMRuntime.getRuntime().requestConcurrentGC();
+        public void requestGC() {
+            if (atomicBoolean.getAndSet(true)) {
+              return;
+            }
+            synchronized (this) {
+                notify();
+            }
+            atomicBoolean.set(false);
         }
 
         @Override public void run() {
             while (isRunning()) {
-                VMRuntime.getRuntime().waitForConcurrentGCRequest();
-                if (isRunning()) {
+                try {
+                    synchronized (this) {
+                        // Wait until a request comes in.
+                        wait();
+                    }
                     VMRuntime.getRuntime().concurrentGC();
+                } catch (InterruptedException ignored) {
                 }
             }
         }

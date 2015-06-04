@@ -101,9 +101,7 @@ public class InputStreamReader extends Reader {
      */
     public InputStreamReader(InputStream in, CharsetDecoder dec) {
         super(in);
-        if (dec == null) {
-            throw new NullPointerException("dec == null");
-        }
+        dec.averageCharsPerByte();
         this.in = in;
         decoder = dec;
         bytes.limit(0);

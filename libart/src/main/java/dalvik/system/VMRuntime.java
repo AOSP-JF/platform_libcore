@@ -272,12 +272,6 @@ public final class VMRuntime {
     public native void clearGrowthLimit();
 
     /**
-     * Make the current growth limit the new non growth limit capacity by releasing pages which
-     * are after the growth limit but before the non growth limit capacity.
-     */
-    public native void clampGrowthLimit();
-
-    /**
      * Returns true if either a Java debugger or native debugger is active.
      */
     public native boolean isDebuggerActive();
@@ -299,8 +293,6 @@ public final class VMRuntime {
 
     public native void trimHeap();
     public native void concurrentGC();
-    public native void requestConcurrentGC();
-    public native void waitForConcurrentGCRequest();
 
     /**
      * Let the heap know of the new process state. This can change allocation and garbage collection
